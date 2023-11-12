@@ -19,7 +19,7 @@ from pydantic import (
 ReturnType = TypeVar("ReturnType", covariant=True)
 
 
-class CallableModel(BaseModel, Generic[ReturnType]):
+class OpenaiFunction(BaseModel, Generic[ReturnType]):
     function_schema: ClassVar[dict[str, object]]
 
     def __init__(self, **_: Any):
@@ -32,22 +32,22 @@ class CallableModel(BaseModel, Generic[ReturnType]):
 @overload
 def openai_function(
     __func: Callable[..., ReturnType], /,
-) -> type[CallableModel[ReturnType]]:
+) -> type[OpenaiFunction[ReturnType]]:
     ...
 
 
 @overload
 def openai_function(
     __func: None = None, /, 
-) -> Callable[[Callable[..., ReturnType]], type[CallableModel[ReturnType]]]:
+) -> Callable[[Callable[..., ReturnType]], type[OpenaiFunction[ReturnType]]]:
     ...
 
 
 def openai_function(
     __func: None | Callable[..., ReturnType] = None, /,
 ) -> (
-    type[CallableModel[ReturnType]]
-    | Callable[[Callable[..., ReturnType]], type[CallableModel[ReturnType]]]
+    type[OpenaiFunction[ReturnType]]
+    | Callable[[Callable[..., ReturnType]], type[OpenaiFunction[ReturnType]]]
 ):
     def decorator(fn):
         # Get annotations from get_type_hints() since it evaluates forward references.
@@ -78,7 +78,7 @@ def openai_function(
             return fn(**self.model_dump())
 
         # Need to use `cast` here, since we're adding a new method after class creation
-        callable_model = cast(type[CallableModel[ReturnType]], base_model)
+        callable_model = cast(type[OpenaiFunction[ReturnType]], base_model)
         callable_model.__call__ = __call__
         callable_model.function_schema = get_schema(fn, base_model)
         return callable_model

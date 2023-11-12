@@ -1,2 +1,5 @@
 from funcmodels.funcmodel import funcmodel
-from funcmodels.openai_function import openai_function
+from funcmodels.openai_function import (
+    OpenaiFunction, 
+    openai_function,
+)
