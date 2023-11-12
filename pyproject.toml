@@ -25,6 +25,7 @@ classifiers = [
 ]
 dependencies = [
     'pydantic',
+    'docstring-parser',
 ]
 
 # [project.urls]
