@@ -220,16 +220,19 @@ def remove_parameters_section_from_docstring(docstring: str) -> str:
     return "\n".join(new_lines)
 
 
+from dataclasses import dataclass, field
+
+@dataclass
 class OpenaiFunctionGroup:
-    _mapping: dict[str, type[OpenaiFunction]]
+    mapping: dict[str, type[OpenaiFunction]] = field(default_factory=dict)
 
     @property
     def function_definitions(self) -> list[dict[str, object]]:
-        return [func.schema for func in self._mapping.values()]
+        return [func.schema for func in self.mapping.values()]
 
     def add_openai_function(self, function: type[OpenaiFunction]):
         key = function.schema["name"]
-        self._mapping[key] = function
+        self.mapping[key] = function
 
     def add_function(self, function: Callable):
         openai_func = openai_function(function)
@@ -238,7 +241,7 @@ class OpenaiFunctionGroup:
     def evaluate_function_call(self, function_call: dict) -> OpenaiFunction:
         name = function_call["function"]
         arguments = function_call["arguments"]
-        return self._mapping[name].from_json(arguments)
+        return self.mapping[name].from_json(arguments)
 
 
 def openai_function_group(
