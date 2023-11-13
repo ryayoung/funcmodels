@@ -227,6 +227,10 @@ class OpenaiFunctionGroup:
     mapping: dict[str, type[OpenaiFunction]] = field(default_factory=dict)
 
     @property
+    def functions(self) -> list[type[OpenaiFunction]]:
+        return list(self.mapping.values())
+
+    @property
     def function_definitions(self) -> list[dict[str, object]]:
         return [func.schema for func in self.mapping.values()]
 
@@ -246,6 +250,9 @@ class OpenaiFunctionGroup:
             name = function_call.name
             arguments = function_call.arguments
         return self.mapping[name].from_json(arguments)
+
+    def __repr__(self):
+        return f"OpenaiFunctionGroup({json.dumps(self.function_definitions, indent=4)})"
 
 
 def openai_function_group(
