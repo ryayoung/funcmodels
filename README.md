@@ -254,20 +254,25 @@ class ChatGPTConversation:
         )
         return response.choices[0]
 
-    def add_message(self, message: dict):
-        print(json.dumps(message, indent=4))
-        self.messages.append(message)
+    def handle_function_call(function_call) -> dict:
+        # match the function call to the right function, and validate arguments
+        validated_call = self.functions.evaluate_function_call(function_call)
+        # Call the function with the validated arguments
+        result = validated_call()
+        return dict(role="function", name=function_call.name, content=str(result))
 
     def chat(self):
         result = self.get_openai_response()
         self.add_message(result.message.model_dump(exclude_unset=True))
 
         if (function_call := result.message.function_call) is not None:
-            output = self.functions.evaluate_function_call(function_call)()
-            self.add_message(dict(role="function", name=function_call.name, content=str(output)))
-
+            self.add_message(self.handle_function_call(function_call))
             if result.finish_reason == 'function_call':
                 self.chat()
+
+    def add_message(self, message: dict):
+        print(json.dumps(message, indent=4))
+        self.messages.append(message)
 
     def send_message(self, prompt: str):
         self.add_message({"role": "user", "content": prompt})
