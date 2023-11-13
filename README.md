@@ -10,6 +10,13 @@ from funcmodels import openai_function
 
 # `@openai_function`
 
+`@openai_function` will turn your function into a Pydantic BaseModel class, using your function parameters as attributes.
+It parses your docstring for a description and parameter descriptions, and combines those with the BaseModel's JSON
+schema to produce a complete OpenAI Function definition. You'll receive back an extended version of this BaseModel class,
+equipped with a class attribute, `.schema` with the function definition, a `.from_json()` class method for creation and validation
+directly from raw function call arguments from OpenAI, and a `__call__` method that passes the instance's validated attributes to the
+handler defined by your decorated function.
+
 ## Highlights
 
 This documentation assumes you're already familiar with OpenAI function calling, **_and_** Pydantic BaseModel.
