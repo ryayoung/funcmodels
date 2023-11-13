@@ -1,7 +1,10 @@
+from __future__ import annotations
+import json
 import inspect
 import textwrap
 import docstring_parser
 from typing import (
+    Self,
     get_type_hints,
     Callable,
     Any,
@@ -20,31 +23,51 @@ ReturnType = TypeVar("ReturnType", covariant=True)
 
 
 class OpenaiFunction(BaseModel, Generic[ReturnType]):
-    function_schema: ClassVar[dict[str, object]]
+    schema: ClassVar[dict[str, Any]]
 
     def __init__(self, **_: Any):
+        ...
+
+    @property
+    def function(self) -> Callable[..., ReturnType]:
         ...
 
     def __call__(self) -> ReturnType:
         ...
 
+    @classmethod
+    def from_json(cls, arguments: str) -> Self:
+        ...
+
+    def __getattr__(self, name: str) -> Any:
+        ...
+
 
 @overload
 def openai_function(
-    __func: Callable[..., ReturnType], /,
+    __func: Callable[..., ReturnType],
+    /,
+    *,
+    group: OpenaiFunctionGroup | None = None,
 ) -> type[OpenaiFunction[ReturnType]]:
     ...
 
 
 @overload
 def openai_function(
-    __func: None = None, /, 
+    __func: None = None,
+    /,
+    *,
+    group: OpenaiFunctionGroup | None = None,
 ) -> Callable[[Callable[..., ReturnType]], type[OpenaiFunction[ReturnType]]]:
     ...
 
 
 def openai_function(
-    __func: None | Callable[..., ReturnType] = None, /,
+    __func: None | Callable[..., ReturnType] = None,
+    /,
+    *,
+    group: OpenaiFunctionGroup | None = None,
 ) -> (
     type[OpenaiFunction[ReturnType]]
     | Callable[[Callable[..., ReturnType]], type[OpenaiFunction[ReturnType]]]
@@ -56,35 +79,54 @@ def openai_function(
 
         param_types = get_type_hints(fn)
 
-        def coalesce_empty_with_ellipsis(param: inspect.Parameter) -> Any:
-            return param.default if param.default is not param.empty else ...
-
         param_defaults = {
-            name: coalesce_empty_with_ellipsis(param)
+            name: param.default if param.default is not param.empty else ...
             for name, param in inspect.signature(fn).parameters.items()
         }
 
-        param_names = list(param_defaults)
-        assert 'openai_function' not in param_names, "openai_function is a reserved parameter name"
+        param_names = list(param_defaults.keys())
+        assert "schema" not in param_names, "schema is a reserved parameter name"
+        assert "function" not in param_names, "function is a reserved parameter name"
 
         model_fields: dict[str, Any] = {
-            name: (param_types.get(name, Any), param_defaults[name]) for name in param_names
+            name: (param_types.get(name, Any), param_defaults[name])
+            for name in param_names
         }
 
-        base_model = create_model(fn.__name__ + "Model", **model_fields)
+        cls_name = fn.__name__
 
-        def __call__(self):
-            # call original func with model's attrs
-            return fn(**self.model_dump())
+        Base = create_model(cls_name, **model_fields)
+        function_schema = get_schema(fn, Base)
 
-        # Need to use `cast` here, since we're adding a new method after class creation
-        callable_model = cast(type[OpenaiFunction[ReturnType]], base_model)
-        callable_model.__call__ = __call__
-        callable_model.function_schema = get_schema(fn, base_model)
-        return callable_model
+        class BaseMeta(type(Base)):
+            def __repr__(self):
+                return f"OpenaiFunction({json.dumps(function_schema, indent=4)})"
+
+        class Model(Base, metaclass=BaseMeta):
+            schema: ClassVar[dict[str, object]] = function_schema
+
+            def __call__(self):
+                return fn(**self.model_dump())
+
+            @property
+            def function(self) -> Callable[..., ReturnType]:
+                return fn
+
+            @classmethod
+            def from_json(cls, arguments: str) -> Self:
+                parsed = json.loads(arguments)
+                return cls(**parsed)
+
+        Model.__name__ = cls_name
+        result = cast(type[OpenaiFunction[ReturnType]], Model)
+
+        if group is not None:
+            group.add_openai_function(result)
+
+        return result
 
     if __func is None:
-        return decorator  # type: ignore
+        return decorator
 
     return decorator(__func)
 
@@ -94,49 +136,43 @@ def get_schema(fn: Callable, model: type[BaseModel]) -> dict[str, object]:
         "name": fn.__name__,
     }
     parameters = model.model_json_schema()
-    parameters.pop('title')
-    parameters = remove_key_recursive(parameters, 'title')
-    parameters = remove_key_value_recursive(parameters, 'default', None)
+    parameters.pop("title")
+    parameters = remove_key_recursive(parameters, "title")
     schema["parameters"] = parameters
 
     raw_docstring = fn.__doc__
     if not raw_docstring:
         return schema
 
-    doc = docstring_parser.parse(textwrap.dedent(raw_docstring))
-    include_in_schema_description = [
-        'short_description',
-        'long_description',
-        'examples',
-        'deprecation',
-        'raises',
-    ]
-    values = [
-        getattr(doc, attr, None) for attr in include_in_schema_description
-    ]
-    if doc.returns:
-        parts = [
-            doc.returns.return_name,
-            doc.returns.type_name,
-            doc.returns.description,
-        ]
-        parts = [p for p in parts if p]
-        if parts:
-            values.append(" - ".join(parts))
+    docstring = textwrap.dedent(raw_docstring).strip()
 
-    filtered_values = [v for v in values if v]
-    schema["description"] = "\n\n".join(filtered_values)
+    doc = docstring_parser.parse(docstring)
 
     if doc.params:
         descriptions = {
-            param.arg_name: param.description for param in doc.params
-            if param.description and param.arg_name
-            and param.arg_name in parameters['properties']
+            param.arg_name: param.description
+            for param in doc.params
+            if param.description
+            and param.arg_name
+            and param.arg_name in parameters["properties"]
         }
         for name, description in descriptions.items():
-            schema['parameters']['properties'][name]['description'] = description
+            schema["parameters"]["properties"][name]["description"] = description
 
-    return schema
+    docstring_without_params = remove_parameters_section_from_docstring(
+        docstring
+    ).strip()
+    if not docstring_without_params:
+        return schema
+
+    schema["description"] = docstring_without_params
+
+    # Re-order keys so description is first. Better readability.
+    return {
+        "name": schema["name"],
+        "description": schema["description"],
+        "parameters": schema["parameters"],
+    }
 
 
 def remove_key_recursive(item, key_to_remove) -> Any:
@@ -152,32 +188,69 @@ def remove_key_recursive(item, key_to_remove) -> Any:
         return item
 
 
-def remove_key_value_recursive(item, key_to_remove, value_to_remove) -> Any:
-    "Remove key/value pairs from a dict"
-    if isinstance(item, dict):
-        return {
-            key: remove_key_value_recursive(value, key_to_remove, value_to_remove)
-            for key, value in item.items()
-            if not (key == key_to_remove and value == value_to_remove)
-        }
-    elif isinstance(item, (list, tuple)):
-        return [remove_key_value_recursive(value, key_to_remove, value_to_remove) for value in item]
-    else:
-        return item
+def remove_parameters_section_from_docstring(docstring: str) -> str:
+    numpydoc_sections = {
+        "Parameters",
+        "Returns",
+        "Examples",
+        "Raises",
+        "Notes",
+        "References",
+        "Yields",
+    }
+    lines = docstring.split("\n")
+    params_start = None
+    params_end = len(lines)
+
+    for i, line in enumerate(lines):
+        if line.strip() == "Parameters":
+            params_start = i
+            continue
+
+        if params_start != -1 and any(
+            line.strip() == section for section in numpydoc_sections
+        ):
+            params_end = i
+            break
+
+    if params_start is None:
+        return docstring
+
+    new_lines = lines[:params_start] + lines[params_end:]
+    return "\n".join(new_lines)
 
 
-if __name__ == "__main__":
+class OpenaiFunctionGroup:
+    _mapping: dict[str, type[OpenaiFunction]]
 
-    @openai_function
-    def get_stock_price(ticker: str):
-        """
-        Get the stock price of a company, by ticker symbol
-        """
-        return "182.41 USD, -0.48 (0.26%) today"
+    @property
+    def function_definitions(self) -> list[dict[str, object]]:
+        return [func.schema for func in self._mapping.values()]
 
-    from dictkit.render import render
-    print(render(get_stock_price.function_schema))
+    def add_openai_function(self, function: type[OpenaiFunction]):
+        key = function.schema["name"]
+        self._mapping[key] = function
 
-    validated = get_stock_price(ticker="AAPL")
-    result = validated()
-    print(result)
+    def add_function(self, function: Callable):
+        openai_func = openai_function(function)
+        self.add_openai_function(openai_func)
+
+    def evaluate_function_call(self, function_call: dict) -> OpenaiFunction:
+        name = function_call["function"]
+        arguments = function_call["arguments"]
+        return self._mapping[name].from_json(arguments)
+
+
+def openai_function_group(
+    openai_functions: list[type[OpenaiFunction]] | None = None,
+    functions: list[Callable] | None = None,
+) -> OpenaiFunctionGroup:
+    group = OpenaiFunctionGroup()
+
+    for func in openai_functions or []:
+        group.add_openai_function(func)
+
+    for func in functions or []:
+        group.add_function(func)
+
+    return group
