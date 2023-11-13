@@ -238,9 +238,13 @@ class OpenaiFunctionGroup:
         openai_func = openai_function(function)
         self.add_openai_function(openai_func)
 
-    def evaluate_function_call(self, function_call: dict) -> OpenaiFunction:
-        name = function_call["function"]
-        arguments = function_call["arguments"]
+    def evaluate_function_call(self, function_call) -> OpenaiFunction:
+        if isinstance(function_call, dict):
+            name = function_call["name"]
+            arguments = function_call["arguments"]
+        else:
+            name = function_call.name
+            arguments = function_call.arguments
         return self.mapping[name].from_json(arguments)
 
 
