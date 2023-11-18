@@ -26,7 +26,7 @@ With `@openai_function`, the ...
 It parses your docstring for a description and parameter descriptions, and combines those with the BaseModel's JSON
 schema to produce a complete OpenAI Function definition. You'll receive back an extended version of this BaseModel class,
 equipped with a class attribute, `.schema` with the function definition, a `.from_json()` class method for creation and validation
-directly from raw function call arguments from OpenAI, and a `__call__` method that passes the instance's validated attributes to the
+directly from raw function call arguments from OpenAI, and an `execute()` method that passes the instance's validated attributes to the
 handler defined by your decorated function.
 
 ```py
@@ -77,16 +77,6 @@ OpenaiFunction({
 })
 ```
 
-`@openai_function` dynamically creates a custom `pydantic.BaseModel` class with:
-- Your function's parameters as attributes, for validation
-- Class attribute, `schema`, with an OpenAI Function object for your function
-    - Parses docstring for description, and parameter descriptions, if present.
-    - Type structure based on pydantic's `.model_json_schema()`
-- Class method, `.from_json()` to easily instantiate your model from raw JSON arguments received from OpenAI
-- A `.__call__()` method to easily call your original function, using the model's validated attributes.
-
----
-
 #### Get our OpenAI function definition dictionary
 ```py
 get_stock_price.schema
@@ -98,15 +88,15 @@ get_stock_price.schema
 #### Instantiate our pydantic model, validating arguments
 
 ```py
-model = get_stock_price(ticker="AAPL")
+validated_function_call = get_stock_price(ticker="AAPL")
 ```
 
 #### Or, go directly from raw json arguments from OpenAI
 
 ```py
 raw_arguments_from_openai = '{"ticker": "AAPL"}'
-model = get_stock_price.from_json(raw_arguments_from_openai)
-model.currency
+validated_function_call = get_stock_price.from_json(raw_arguments_from_openai)
+validated_function_call.currency
 ```
 ```
 'USD'
@@ -114,7 +104,7 @@ model.currency
 
 #### Call our function, with already-validated arguments
 ```py
-model()
+validated_function_call.execute()
 ```
 ```
 '182.41 USD, -0.48 (0.26%) today'
@@ -222,15 +212,15 @@ function_call_from_openai = {
     "arguments": '{"city": "Denver"}',
 }
 
-model = group.evaluate_function_call(function_call_from_openai)
-model
+validated_function_call = group.evaluate_function_call(function_call_from_openai)
+validated_function_call
 ```
 ```
 get_weather(city='Denver')
 ```
 
 ```py
-result = model()
+result = validated_function_call.execute()
 result
 ```
 ```
@@ -273,7 +263,7 @@ class ChatGPTConversation:
         # match the function call to the right function, and validate arguments
         validated_call = self.functions.evaluate_function_call(function_call)
         # Call the function with the validated arguments
-        result = validated_call()
+        result = validated_call.execute()
         return dict(role="function", name=function_call.name, content=str(result))
 
     def chat(self):

@@ -3,18 +3,18 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "funcmodels"
-version = "0.0.7"
+name = "toolcall"
+version = "0.0.1"
 python_requires = ">=3.10"
-description = "Pydantic model validation and argument handling, for your functions!"
+description = "OpenAI function/tool calling made easy"
 authors = [
     {name = "Ryan Young", email = "dev@ryayoung.com"}
 ]
 readme = "README.md"
 license = "MIT"
-homepage = "https://github.com/ryayoung/funcmodels"
-repository = "https://github.com/ryayoung/funcmodels"
-documentation = "https://funcmodels.readthedocs.io"
+homepage = "https://github.com/ryayoung/toolcall"
+repository = "https://github.com/ryayoung/toolcall"
+documentation = "https://toolcall.readthedocs.io"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
