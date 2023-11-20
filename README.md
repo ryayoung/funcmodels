@@ -1,4 +1,4 @@
-# OpenAI Functions
+# !! Deprecated. Replaced with [`ryayoung/toolcall`](https://github.com/ryayoung/toolcall) !!
 
 ```
 pip install funcmodels
